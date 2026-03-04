@@ -247,3 +247,121 @@ class TestColorFills:
                         f"Row {row}: category {category!r} expected color {expected_color} "
                         f"but got {actual_rgb}"
                     )
+
+
+# ---------------------------------------------------------------------------
+# Non-configured category extension tests (T4)
+# ---------------------------------------------------------------------------
+
+class TestNonConfiguredCategories:
+    """When Claude returns a category not in config, it should appear in the
+    Lists sheet dropdown so the workbook is always self-consistent."""
+
+    def test_non_configured_category_in_lists_sheet(self, tmp_path, config):
+        records = [make_record("1")]
+        predictions = ["BrandNewCategory"]  # not in config
+
+        output = tmp_path / "out.xlsx"
+        generate_workbook(records, predictions, config, output)
+        wb = load_workbook(str(output))
+
+        lists_ws = wb["Lists"]
+        cat_values = [lists_ws.cell(row=i, column=1).value for i in range(1, 20)]
+        cat_values = [v for v in cat_values if v is not None]
+        assert "BrandNewCategory" in cat_values
+
+    def test_non_configured_category_appended_after_configured(self, tmp_path, config):
+        records = [make_record("1")]
+        predictions = ["ZZZNewCat"]
+
+        output = tmp_path / "out.xlsx"
+        generate_workbook(records, predictions, config, output)
+        wb = load_workbook(str(output))
+
+        lists_ws = wb["Lists"]
+        cat_values = [lists_ws.cell(row=i, column=1).value for i in range(1, 25)]
+        cat_values = [v for v in cat_values if v is not None]
+
+        # Configured categories come first
+        configured = config.category_names
+        for i, cat in enumerate(configured):
+            assert cat_values[i] == cat, f"Position {i}: expected {cat!r}, got {cat_values[i]!r}"
+
+        # Extra category is appended after
+        assert cat_values[len(configured)] == "ZZZNewCat"
+
+    def test_multiple_non_configured_categories_sorted(self, tmp_path, config):
+        records = [make_record("1"), make_record("2"), make_record("3")]
+        predictions = ["ZZZ", "AAA", "MMM"]
+
+        output = tmp_path / "out.xlsx"
+        generate_workbook(records, predictions, config, output)
+        wb = load_workbook(str(output))
+
+        lists_ws = wb["Lists"]
+        configured_count = len(config.category_names)
+        extra_values = [
+            lists_ws.cell(row=configured_count + i, column=1).value
+            for i in range(1, 4)
+        ]
+        extra_values = [v for v in extra_values if v is not None]
+        assert extra_values == sorted(extra_values), "Extra categories must be in sorted order"
+        assert set(extra_values) == {"AAA", "MMM", "ZZZ"}
+
+    def test_non_configured_category_uses_default_fill(self, tmp_path, config):
+        """A category not in config should get #E0E0E0 fill (gray default)."""
+        records = [make_record("1")]
+        predictions = ["UnknownCat"]
+
+        output = tmp_path / "out.xlsx"
+        generate_workbook(records, predictions, config, output)
+        wb = load_workbook(str(output))
+
+        ws = wb["Inquiries"]
+        pred_cell = ws.cell(row=2, column=9)
+        assert pred_cell.fill is not None and pred_cell.fill.fill_type == "solid"
+        # Should be E0E0E0 (the default gray)
+        fill_rgb = pred_cell.fill.fgColor.rgb.upper()
+        assert "E0E0E0" in fill_rgb
+
+    def test_configured_only_predictions_no_extras_in_lists(self, tmp_path, config):
+        """If all predictions are configured, no extra rows added to Lists."""
+        records = [make_record("1"), make_record("2")]
+        predictions = ["Issue with login", "Refund request"]
+
+        output = tmp_path / "out.xlsx"
+        generate_workbook(records, predictions, config, output)
+        wb = load_workbook(str(output))
+
+        lists_ws = wb["Lists"]
+        configured_count = len(config.category_names)
+        # Row after last configured should be empty
+        extra_val = lists_ws.cell(row=configured_count + 1, column=1).value
+        assert extra_val is None
+
+    def test_cat_range_covers_extra_categories(self, tmp_path, config):
+        """The data validation formula must reference the extended range."""
+        records = [make_record("1")]
+        predictions = ["NewCatAlpha"]
+
+        output = tmp_path / "out.xlsx"
+        generate_workbook(records, predictions, config, output)
+        wb = load_workbook(str(output))
+
+        ws = wb["Inquiries"]
+        dv_list = ws.data_validations.dataValidation
+        # Find the category validation formula
+        for dv in dv_list:
+            if dv.formula1 and "Lists!$A$" in dv.formula1:
+                # Extract the row number from the formula like "Lists!$A$1:$A$12"
+                import re
+                m = re.search(r"\$A\$(\d+)$", dv.formula1)
+                if m:
+                    row_count = int(m.group(1))
+                    expected_count = len(config.category_names) + 1  # +1 for NewCatAlpha
+                    assert row_count == expected_count, (
+                        f"cat_range row count {row_count} != expected {expected_count}"
+                    )
+                    break
+        else:
+            pytest.fail("No category data validation formula found in workbook")

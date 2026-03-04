@@ -89,12 +89,21 @@ def generate_workbook(
     category_names = config.category_names
     source_names = config.sources
 
-    for i, cat in enumerate(category_names, start=1):
+    # Extend category list with any non-configured categories present in predictions
+    # (e.g. Claude may return a valid but unconfigured category). These are appended
+    # in sorted order so the dropdown always includes every value in the workbook.
+    configured_set = set(category_names)
+    extra_cats = sorted(
+        {cat for cat in predicted_categories if cat not in configured_set}
+    )
+    extended_cats = category_names + extra_cats
+
+    for i, cat in enumerate(extended_cats, start=1):
         lists_ws.cell(row=i, column=1, value=cat)
     for i, src in enumerate(source_names, start=1):
         lists_ws.cell(row=i, column=2, value=src)
 
-    cat_range = f"Lists!$A$1:$A${len(category_names)}"
+    cat_range = f"Lists!$A$1:$A${len(extended_cats)}"
     src_range = f"Lists!$B$1:$B${len(source_names)}"
 
     # --- Header row ---
