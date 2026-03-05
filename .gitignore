@@ -5,6 +5,8 @@ chief.config.json
 .cursorindexingignore
 .specstory/
 
+.env
+
 # Python
 __pycache__/
 *.py[cod]
@@ -21,3 +23,6 @@ env/
 
 # Output files
 *.xlsx
+
+# Source documents
+source_docs/

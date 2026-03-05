@@ -12,6 +12,7 @@ from typing import Any
 import yaml
 
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "categories.yaml"
+_DEFAULT_NEW_CATEGORY_COLOR = "#E0E0E0"
 
 
 @dataclass
@@ -28,6 +29,21 @@ class CategoryConfig:
     @property
     def category_names(self) -> list[str]:
         return [cat["name"] for cat in self.categories]
+
+    def add_category(self, name: str, color: str = _DEFAULT_NEW_CATEGORY_COLOR) -> None:
+        """Add a new category in-memory (not persisted to config file).
+
+        If the category already exists, this is a no-op.
+
+        Args:
+            name: Category name to add.
+            color: Hex color string for the category row fill. Defaults to
+                   a neutral gray (#E0E0E0).
+        """
+        if name in self.color_map:
+            return
+        self.categories.append({"name": name, "color": color})
+        self.color_map[name] = color
 
 
 def load_config(config_path: str | Path | None = None) -> CategoryConfig:
